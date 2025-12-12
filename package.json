@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/backend": "^2.27.0",
     "@clerk/clerk-react": "^5.58.1",
     "@clerk/themes": "^2.4.43",
     "@google/genai": "^1.32.0",
     "html2canvas": "1.4.1",
     "lucide-react": "^0.559.0",
+    "micro": "^10.0.1",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   },
