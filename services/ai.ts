@@ -1,6 +1,6 @@
 import { AuditData, RoastResult } from "../types";
 
-// Mock Data for fallback (Jaga-jaga kalau server error)
+// Mock Data for fallback
 const MOCK_ROASTS: RoastResult[] = [
   {
     toxicityScore: 87,
@@ -13,49 +13,66 @@ const MOCK_ROASTS: RoastResult[] = [
   }
 ];
 
-// --- 1. FUNGSI UTAMA: GENERATE ROAST ---
+// --- 1. GENERATE ROAST (AMAZON NOVA VISION) ---
 export const generateRoast = async (data: AuditData): Promise<RoastResult> => {
-  // Ambil Key dari Env Vite
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
   if (!apiKey) {
-    console.warn("No API_KEY found. Using mock data.");
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.warn("No API Key. Using mock.");
     return MOCK_ROASTS[0];
   }
 
   try {
-    // Susun Prompt Sistem
     const systemPrompt = `
-      Act as "The Love Auditor", a savage, cynical, and funny relationship expert for Gen Z.
+      Act as "The Love Auditor", a savage, cynical relationship expert.
       
-      Your Task: Analyze the relationship data provided by the user.
+      CRITICAL TASK - IDENTITY DETECTION:
+      1. Analyze the input (text chat or screenshot).
+      2. Identify who is the "User" (Me) and who is the "Partner" (Them).
+         - In text chats: Use context clues (names, gender pronouns).
+         - In screenshots: "User" bubbles are usually on the RIGHT. "Partner" bubbles are on the LEFT.
+      3. Align this with the provided 'Subject Gender' (The Partner's Gender).
       
-      Output Requirement:
-      You MUST return a VALID JSON object ONLY. Do not write any text before or after the JSON.
-      
-      JSON Structure:
+      OUTPUT REQUIREMENTS:
+      - Return VALID JSON ONLY. No markdown blocks. No "Here is the JSON" text.
+      - JSON format:
       {
-        "toxicityScore": (number 0-100),
-        "verdict": (string, short punchy title like "BORING AS HELL" or "TOXICITY OVERLOAD"),
-        "shortAnalysis": (string, 2 sentences, ruthless roast),
-        "hiddenRedFlagsCount": (number between 2 and 5),
-        "detailedAnalysis": (string, long paragraph explaining why it sucks),
-        "redFlagsList": (array of strings, specific flags found),
-        "advice": (string, blunt advice)
+        "toxicityScore": (0-100),
+        "verdict": (Short title),
+        "shortAnalysis": (Roast the partner based on their specific texts),
+        "hiddenRedFlagsCount": (2-5),
+        "detailedAnalysis": (Deep dive into the specific dynamics found),
+        "redFlagsList": ["Flag 1", "Flag 2"],
+        "advice": (Actionable advice)
       }
     `;
 
-    // Susun Prompt User
-    let userContent = `Subject Gender: ${data.gender}\nStatus: ${data.status}\n`;
-    
+    // Persiapkan Payload (Teks + Gambar)
+    const messages: any[] = [
+        { role: "system", content: systemPrompt }
+    ];
+
+    let userContent: any[] = [
+        { type: "text", text: `Subject Gender (The Partner): ${data.gender}\nStatus: ${data.status}\n` }
+    ];
+
     if (data.chatHistory) {
-        userContent += `Chat Evidence: "${data.chatHistory.substring(0, 1500)}"`;
-    } else {
-        userContent += "Evidence provided: Screenshot (Text analysis only for this free model).";
+        userContent.push({ type: "text", text: `Chat Evidence (Text): "${data.chatHistory.substring(0, 2000)}"` });
+    } 
+    
+    // Support Screenshot via OpenRouter (Amazon Nova Vision)
+    if (data.screenshot) {
+        userContent.push({
+            type: "image_url",
+            image_url: {
+                url: data.screenshot // Base64 string
+            }
+        });
+        userContent.push({ type: "text", text: "\n[SYSTEM NOTE: Analyze the screenshot. Messages on the RIGHT are the User (Me). Messages on the LEFT are the Partner (Them).]" });
     }
 
-    // Panggil OpenRouter
+    messages.push({ role: "user", content: userContent });
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -65,68 +82,97 @@ export const generateRoast = async (data: AuditData): Promise<RoastResult> => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "tngtech/deepseek-r1t2-chimera:free", // Model Gratis Pilihan Anda
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent }
-        ]
+        // GANTI KE MODEL AMAZON NOVA
+        model: "amazon/nova-2-lite-v1:free", 
+        messages: messages,
+        temperature: 0.7 // Biar kreatif dikit roast-nya
       })
     });
 
-    if (!response.ok) {
-        throw new Error(`OpenRouter API Error: ${response.statusText}`);
-    }
+    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
 
     const json = await response.json();
     let content = json.choices[0].message.content;
-
-    // Bersihkan Markdown kalau AI bandel ngasih ```json ... ```
+    
+    // Bersihkan Markdown JSON kalau AI bandel
     content = content.replace(/```json|```/g, "").trim();
+    
+    // Validasi JSON sederhana
+    const parsed = JSON.parse(content);
+    if (!parsed.toxicityScore) throw new Error("Invalid JSON structure");
 
-    return JSON.parse(content) as RoastResult;
+    return parsed as RoastResult;
 
   } catch (error) {
     console.error("AI Error:", error);
-    return MOCK_ROASTS[0]; // Fallback ke mock data kalau error
+    return MOCK_ROASTS[0];
   }
 };
 
-// --- 2. FUNGSI CHATBOT: CHAT WITH AUDITOR ---
+// --- 2. CHAT WITH AUDITOR (AMAZON NOVA MEMORY) ---
+// Tambahkan parameter 'auditData'
 export const chatWithAuditor = async (
     history: {role: 'user' | 'model', text: string}[], 
     newMessage: string,
-    roastContext?: any
+    roastContext?: any,
+    auditData?: AuditData // <--- Parameter Baru: Bukti Asli
 ): Promise<string> => {
     const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
-    
-    if (!apiKey) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return "I need an API Key to roast you properly.";
-    }
+    if (!apiKey) return "API Key missing.";
 
     try {
-        // Susun System Prompt dengan Konteks
-        let systemInstruction = "You are The Love Auditor. You are rude, funny, cynical, and give tough love relationship advice. Keep answers short, punchy, and use Gen Z slang.";
+        let systemInstruction = `You are The Love Auditor. Rude, funny, Gen Z slang.
         
-        if (roastContext) {
-            systemInstruction += `\n\nCONTEXT ABOUT THE USER:
-            - Their Toxicity Score: ${roastContext.toxicityScore}%
-            - Relationship Verdict: "${roastContext.verdict}"
-            - Known Red Flags: ${roastContext.redFlagsList?.join(', ')}
-            - Your Analysis: "${roastContext.detailedAnalysis}"
+        CONTEXT FROM AUDIT (Use this to roast them):
+        - Partner Toxicity: ${roastContext?.toxicityScore}%
+        - Verdict: "${roastContext?.verdict}"
+        - Analysis: "${roastContext?.detailedAnalysis}"
+        
+        YOUR MEMORY:
+        Keep conversation continuity. Reference previous messages.
+        `;
+
+        // Susun Pesan Awal (System + Evidence)
+        const messages: any[] = [
+            { role: "system", content: systemInstruction }
+        ];
+
+        // --- INJEKSI BUKTI ASLI (Supaya AI tahu detail chatnya) ---
+        if (auditData) {
+            let evidenceContent: any[] = [{ type: "text", text: "HERE IS THE ORIGINAL EVIDENCE YOU ANALYZED:" }];
             
-            USE THIS INFO TO ROAST THEM.`;
+            // 1. Jika Teks
+            if (auditData.chatHistory) {
+                evidenceContent.push({ 
+                    type: "text", 
+                    text: `\nRAW CHAT LOG:\n"${auditData.chatHistory.substring(0, 3000)}"\n(Use this to quote specific parts)` 
+                });
+            }
+            
+            // 2. Jika Gambar (Kita kirim lagi gambarnya ke Chatbot)
+            if (auditData.screenshot) {
+                evidenceContent.push({
+                    type: "image_url",
+                    image_url: { url: auditData.screenshot }
+                });
+                evidenceContent.push({ type: "text", text: "\n[IMAGE CONTEXT: This is the screenshot provided by the user]" });
+            }
+            
+            // Masukkan bukti ini sebagai pesan "system" atau "user" semu di awal agar AI ingat
+            messages.push({ role: "user", content: evidenceContent });
+            messages.push({ role: "assistant", content: "Got it. I see the evidence. I'm ready to roast specific details." });
         }
 
-        // Konversi format history kita ke format OpenRouter
-        const messages = [
-            { role: "system", content: systemInstruction },
-            ...history.map(h => ({
-                role: h.role === 'model' ? 'assistant' : 'user', // OpenRouter pakai 'assistant', bukan 'model'
+        // --- History Percakapan ---
+        history.forEach(h => {
+            messages.push({
+                role: h.role === 'model' ? 'assistant' : 'user',
                 content: h.text
-            })),
-            { role: "user", content: newMessage }
-        ];
+            });
+        });
+
+        // --- Pesan Baru User ---
+        messages.push({ role: "user", content: newMessage });
 
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -137,16 +183,16 @@ export const chatWithAuditor = async (
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "tngtech/deepseek-r1t2-chimera:free",
+                model: "amazon/nova-2-lite-v1:free", 
                 messages: messages
             })
         });
 
         const json = await response.json();
-        return json.choices[0].message.content || "I'm speechless.";
+        return json.choices[0].message.content;
 
     } catch (e) {
         console.error(e);
-        return "Server overload. Too many toxic relationships to process. Try again.";
+        return "I forgot the chat. Refresh to remind me.";
     }
 }
