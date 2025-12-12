@@ -1,17 +1,23 @@
 import { AuditData, RoastResult } from "../types";
 
-// --- 1. KEY ROTATION SYSTEM (5 AKUN) ---
-// Kita hardcode key di sini sesuai request Anda agar tidak perlu ribet set .env satu-satu lagi
+// --- 1. KEY ROTATION SYSTEM (AMAN DARI GITHUB) ---
+// Mengambil kunci dari .env.local / Vercel Environment Variables
 const API_KEYS = [
-  "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",
-  "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",
-  "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",
-  "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",
-  "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"
-];
+  import.meta.env.VITE_OR_KEY_1,
+  import.meta.env.VITE_OR_KEY_2,
+  import.meta.env.VITE_OR_KEY_3,
+  import.meta.env.VITE_OR_KEY_4,
+  import.meta.env.VITE_OR_KEY_5
+].filter(key => key && key.startsWith("sk-or-")); // Validasi sederhana
 
 // Helper: Pilih Kunci Acak
-const getRandomKey = () => API_KEYS[Math.floor(Math.random() * API_KEYS.length)];
+const getRandomKey = () => {
+    if (API_KEYS.length === 0) {
+        console.error("NO API KEYS FOUND! Please check .env file or Vercel Settings.");
+        return null;
+    }
+    return API_KEYS[Math.floor(Math.random() * API_KEYS.length)];
+};
 
 // Helper: Header Generator
 const getHeaders = (apiKey: string) => ({
@@ -34,11 +40,11 @@ const MOCK_ROASTS: RoastResult[] = [
   }
 ];
 
-// --- HELPER: TRANSKRIPSI GAMBAR (AMAZON NOVA 2 LITE) ---
-// Tugas: Mengubah Screenshot -> Teks Dialog (Aku vs Dia)
-// Kita buat prompt-nya "Robotik" agar Nova tidak baper/sensor konten chatnya.
+// --- HELPER: TRANSKRIPSI GAMBAR (MATA: NOVA 2 LITE) ---
 const analyzeScreenshot = async (base64Image: string): Promise<string> => {
     const apiKey = getRandomKey();
+    if (!apiKey) return "(No API Key)";
+
     try {
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -62,7 +68,7 @@ const analyzeScreenshot = async (base64Image: string): Promise<string> => {
                         ]
                     }
                 ],
-                temperature: 0.1 // Rendah biar akurat baca teks
+                temperature: 0.1
             })
         });
         
@@ -74,19 +80,18 @@ const analyzeScreenshot = async (base64Image: string): Promise<string> => {
     }
 }
 
-// --- 1. GENERATE ROAST (HYBRID ENGINE) ---
+// --- 1. GENERATE ROAST (OTAK: DEEPSEEK CHIMERA) ---
 export const generateRoast = async (data: AuditData): Promise<RoastResult> => {
   let attempt = 0;
   const maxRetries = 3;
 
-  // STEP 1: VISION PROCESSING (Mata Nova)
-  // Kita lakukan ini di luar loop retry agar tidak membuang waktu scan gambar berkali-kali
+  // STEP 1: VISION PROCESSING
   let visualTranscript = "";
   if (data.screenshot) {
       visualTranscript = await analyzeScreenshot(data.screenshot);
   }
 
-  // Gabungkan bukti (Chat Manual + Hasil Scan Gambar)
+  // Gabungkan bukti
   const fullEvidence = `
     RAW TEXT INPUT: "${data.chatHistory || 'N/A'}"
     SCREENSHOT TRANSCRIPT: "${visualTranscript}"
@@ -94,8 +99,10 @@ export const generateRoast = async (data: AuditData): Promise<RoastResult> => {
 
   while (attempt < maxRetries) {
       const apiKey = getRandomKey();
+      if (!apiKey) return MOCK_ROASTS[0];
+
       try {
-        // STEP 2: DEEPSEEK BRAIN (Otak Gacor)
+        // STEP 2: DEEPSEEK BRAIN
         const systemPrompt = `
           Act as "The Love Auditor", a savage, cynical relationship expert.
           
@@ -129,7 +136,7 @@ export const generateRoast = async (data: AuditData): Promise<RoastResult> => {
                 { role: "system", content: systemPrompt },
                 { role: "user", content: "Roast this relationship." }
             ],
-            temperature: 0.7
+            temperature: 0.75
           })
         });
 
@@ -160,17 +167,15 @@ export const chatWithAuditor = async (
     auditData?: AuditData
 ): Promise<string> => {
     
-    // Coba 2x ganti kunci kalau gagal
     for (let i = 0; i < 2; i++) { 
         const apiKey = getRandomKey();
+        if (!apiKey) return "System Offline.";
+
         try {
-            // Kita coba ambil transkrip lagi kalau ada screenshot (biar chatnya nyambung)
-            // Note: Idealnya transkrip disimpan di state App.tsx biar gak boros, tapi ini cara paling aman tanpa ubah UI banyak
             let evidenceRecap = `Text Evidence: "${auditData?.chatHistory || ''}"`;
             
             if (auditData?.screenshot) {
-                // Kita panggil Nova lagi sebentar untuk ekstrak konteks kalau user nanya detail gambar
-                // Supaya cepat, kita beri instruksi singkat
+                // Panggil Nova sebentar untuk ekstrak konteks gambar ke chat
                 const imageContext = await analyzeScreenshot(auditData.screenshot);
                 evidenceRecap += `\nScreenshot Transcript: "${imageContext}"`;
             }
@@ -181,7 +186,7 @@ export const chatWithAuditor = async (
             - Verdict: "${roastContext?.verdict}"
             - Analysis: "${roastContext?.detailedAnalysis}"
             - EVIDENCE: ${evidenceRecap}
-
+            
             YOUR MEMORY:
             Keep conversation continuity. Reference previous messages.
             
@@ -203,7 +208,7 @@ export const chatWithAuditor = async (
                 method: "POST",
                 headers: getHeaders(apiKey),
                 body: JSON.stringify({
-                    model: "tngtech/deepseek-r1t2-chimera:free", // Otak DeepSeek
+                    model: "tngtech/deepseek-r1t2-chimera:free",
                     messages: messages
                 })
             });
