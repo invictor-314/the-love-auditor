@@ -97,26 +97,6 @@ const App: React.FC = () => {
     }
   }, [chatHistory, view]);
 
-  // Cek Pembayaran Sukses dari Redirect Lemon Squeezy
-  useEffect(() => {
-    // Cek apakah ada parameter ?payment=success di URL
-    const query = new URLSearchParams(window.location.search);
-    if (query.get('payment') === 'success') {
-       // Bersihkan URL biar gak kotor
-       window.history.replaceState({}, document.title, window.location.pathname);
-       
-       // Tampilkan Alert Sukses
-       alert("Payment Successful! Welcome to the dark side.");
-       
-       // Simpan status premium di LocalStorage (HACK SEMENTARA BIAR CEPAT)
-       // Di fase selanjutnya kita pake Webhook biar aman 100%
-       if (isSignedIn && user) {
-           localStorage.setItem(`premium_${user.id}`, 'true');
-           // Redirect langsung ke Dashboard
-           setView(AppView.PREMIUM_DASHBOARD);
-       }
-    }
-  }, [isSignedIn, user]);
 
   // --- Helpers ---
 
@@ -132,8 +112,8 @@ const App: React.FC = () => {
       return "bg-blood-500";
   };
 
-  // Cek premium dari Metadata Clerk ATAU LocalStorage (Hack sementara)
-  const isPremiumUser = user?.publicMetadata?.isPremium === true || localStorage.getItem(`premium_${user?.id}`) === 'true';
+  // Cek premium dari Metadata Clerk
+  const isPremiumUser = user?.publicMetadata?.isPremium === true;
 
   // --- Handlers ---
 
@@ -181,18 +161,16 @@ const App: React.FC = () => {
 
   // LOGIKA UNLOCK REAL (Lemon Squeezy)
   const handleUnlock = () => {
-    if (isSignedIn) {
-      if (isPremiumUser) {
-        setView(AppView.PREMIUM_DASHBOARD);
-      } else {
-         // Redirect user ke halaman bayar Lemon Squeezy
-         // Kita tambahkan parameter email user biar di form pembayaran otomatis terisi
-         const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${user.primaryEmailAddress?.emailAddress}`;
-         window.location.href = checkoutUrl;
-      }
+    if (isSignedIn && user) {
+       if (isPremiumUser) {
+          setView(AppView.PREMIUM_DASHBOARD);
+       } else {
+          // Kirim email user agar backend bisa mencocokkan nanti
+          const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${user.primaryEmailAddress?.emailAddress}`;
+          window.location.href = checkoutUrl;
+       }
     } else {
-      // Belum login -> Buka Login Clerk
-      setView(AppView.AUTH);
+       setView(AppView.AUTH);
     }
   };
 
