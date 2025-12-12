@@ -191,8 +191,8 @@ const App: React.FC = () => {
       setChatInput("");
       setIsChatting(true);
       
-      // KIRIM 'result' SEBAGAI KONTEKS KE AI
-      const response = await chatWithAuditor(newHistory, chatInput, result);
+      // KIRIM 'auditData' JUGA (Parameter ke-4)
+      const response = await chatWithAuditor(newHistory, chatInput, result, auditData); 
       
       setChatHistory(prev => [...prev, {role: 'model', text: response}]);
       setIsChatting(false);
