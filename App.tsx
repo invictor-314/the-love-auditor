@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import Layout from './components/Layout';
 import { GlassCard, Button, Input, Select, TextArea, Title, Subtitle } from './components/UI';
 import { AppView, AuditData, Gender, RelationshipStatus, RoastResult } from './types';
@@ -670,8 +671,25 @@ const App: React.FC = () => {
                          I've exposed the truth. What now? Ask me anything.
                      </div>
                      {chatHistory.map((msg, i) => (
-                         <div key={i} className={`p-3 rounded-lg max-w-[85%] text-sm ${msg.role === 'user' ? 'self-end bg-blood-700 text-white rounded-tl-lg rounded-bl-lg rounded-br-lg' : 'self-start bg-gray-800 text-gray-200 rounded-tr-lg rounded-br-lg rounded-bl-lg'}`}>
-                             {msg.text}
+                         <div key={i} className={`p-3 rounded-lg max-w-[90%] text-sm ${msg.role === 'user' ? 'self-end bg-blood-700 text-white rounded-tl-lg rounded-bl-lg rounded-br-lg' : 'self-start bg-gray-800 text-gray-200 rounded-tr-lg rounded-br-lg rounded-bl-lg'}`}>
+                             {/* Render Markdown agar teksnya rapi (Bold, List, dll) */}
+                             <ReactMarkdown
+                                 components={{
+                                     // Custom Style untuk elemen Markdown biar cocok sama tema Dark
+                                     strong: ({node, ...props}) => <span className="font-bold text-white" {...props} />,
+                                     ul: ({node, ...props}) => <ul className="list-disc pl-4 space-y-1 my-2" {...props} />,
+                                     ol: ({node, ...props}) => <ol className="list-decimal pl-4 space-y-1 my-2" {...props} />,
+                                     li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                                     h1: ({node, ...props}) => <h1 className="text-base font-black uppercase mb-2 text-blood-500 mt-2" {...props} />,
+                                     h2: ({node, ...props}) => <h2 className="text-sm font-bold uppercase mb-1 text-white mt-2" {...props} />,
+                                     h3: ({node, ...props}) => <h3 className="text-sm font-bold uppercase mb-1 text-white mt-1" {...props} />,
+                                     blockquote: ({node, ...props}) => <blockquote className="border-l-2 border-blood-500 pl-3 italic text-gray-400 my-2 bg-black/20 p-1 rounded-r" {...props} />,
+                                     p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+                                     hr: ({node, ...props}) => <hr className="border-white/10 my-3" {...props} />,
+                                 }}
+                             >
+                                 {msg.text}
+                             </ReactMarkdown>
                          </div>
                      ))}
                      {isChatting && <div className="self-start text-gray-500 text-xs animate-pulse">Auditor is typing...</div>}
