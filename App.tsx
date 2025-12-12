@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import { GlassCard, Button, Input, Select, TextArea, Title, Subtitle } from './components/UI';
-import { AppView, AuditData, Gender, RelationshipStatus, RoastResult, User } from './types';
+import { AppView, AuditData, Gender, RelationshipStatus, RoastResult } from './types';
 import { generateRoast, chatWithAuditor } from './services/ai';
 // @ts-ignore
 import html2canvas from 'html2canvas';
@@ -25,8 +25,9 @@ import {
   Search
 } from 'lucide-react';
 
-import { useUser, useClerk, SignIn, UserButton } from "@clerk/clerk-react";
+import { useUser, useClerk, SignIn } from "@clerk/clerk-react";
 
+// Link Checkout Lemon Squeezy Anda
 const LEMON_SQUEEZY_CHECKOUT_URL = "https://loveauditor.lemonsqueezy.com/buy/2d693ba6-6fb4-4f60-ac2a-57420e6b6210";
 
 const App: React.FC = () => {
@@ -39,9 +40,11 @@ const App: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RoastResult | null>(null);
-  // User diganti dengan Hook Clerk
+  
+  // Clerk Hooks
   const { isSignedIn, user, isLoaded } = useUser();
   const { signOut, openSignIn } = useClerk();
+  
   const [fileName, setFileName] = useState<string | null>(null);
   
   // Premium Chat State
@@ -52,25 +55,25 @@ const App: React.FC = () => {
 
   // Profile Edit State
   const [editUsername, setEditUsername] = useState("");
-  // Sync Clerk User ke State Lokal
 
-// --- PERSISTENCE: AUTO LOAD DATA ---
+  // Refs
+  const exportRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- EFFECT: Load Data from Storage ---
   useEffect(() => {
-    // Cek apakah ada data tersimpan di LocalStorage
     const savedResult = localStorage.getItem('audit_result');
     const savedData = localStorage.getItem('audit_input');
     
     if (savedResult) {
         setResult(JSON.parse(savedResult));
-        // Jika user punya result tapi belum premium, dia tetap bisa lihat Free Result
-        // Jika user premium, nanti logic renderPremium akan otomatis jalan jika view di-set
     }
     if (savedData) {
         setAuditData(JSON.parse(savedData));
     }
   }, []);
 
-  // --- PERSISTENCE: AUTO SAVE DATA ---
+  // --- EFFECT: Save Data to Storage ---
   useEffect(() => {
     if (result) {
         localStorage.setItem('audit_result', JSON.stringify(result));
@@ -80,18 +83,15 @@ const App: React.FC = () => {
     }
   }, [result, auditData]);
   
+  // --- EFFECT: Sync Username ---
   useEffect(() => {
     if (isLoaded && isSignedIn && user) {
         setEditUsername(user.username || user.fullName || "LoveVictim");
     }
   }, [isLoaded, isSignedIn, user]);
 
-  // Report Download Ref (Hidden export template)
-  const exportRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  // --- EFFECT: Scroll Chat ---
   useEffect(() => {
-    // Scroll chat to bottom
     if (chatEndRef.current) {
         chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -112,7 +112,7 @@ const App: React.FC = () => {
       return "bg-blood-500";
   };
 
-  // Cek premium dari Metadata Clerk
+  // Cek premium dari Metadata Clerk (Webhook System)
   const isPremiumUser = user?.publicMetadata?.isPremium === true;
 
   // --- Handlers ---
@@ -142,7 +142,6 @@ const App: React.FC = () => {
               alert("File too large. Please upload an image under 5MB.");
               return;
           }
-          
           setFileName(file.name);
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -159,13 +158,13 @@ const App: React.FC = () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // LOGIKA UNLOCK REAL (Lemon Squeezy)
+  // LOGIKA UNLOCK (Redirect ke Lemon Squeezy)
   const handleUnlock = () => {
     if (isSignedIn && user) {
        if (isPremiumUser) {
           setView(AppView.PREMIUM_DASHBOARD);
        } else {
-          // Kirim email user agar backend bisa mencocokkan nanti
+          // Kirim email user agar backend bisa mencocokkan nanti via Webhook
           const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${user.primaryEmailAddress?.emailAddress}`;
           window.location.href = checkoutUrl;
        }
@@ -175,7 +174,6 @@ const App: React.FC = () => {
   };
 
   const handleLogin = () => {
-    // Membuka Modal Login Clerk
     openSignIn();
   };
 
@@ -194,7 +192,7 @@ const App: React.FC = () => {
       setIsChatting(true);
       
       // KIRIM 'result' SEBAGAI KONTEKS KE AI
-      const response = await chatWithAuditor(newHistory, chatInput, result); // <--- Tambah parameter 'result'
+      const response = await chatWithAuditor(newHistory, chatInput, result);
       
       setChatHistory(prev => [...prev, {role: 'model', text: response}]);
       setIsChatting(false);
@@ -202,26 +200,29 @@ const App: React.FC = () => {
 
   const handleUpdateProfile = () => {
       if (user) {
-          setUser({ ...user, username: editUsername });
-          alert("Profile updated. You are still unlovable, but at least your name changed.");
+          // Note: Updating Clerk user profile client-side has limitations, 
+          // usually requires update() from useUser() or backend. 
+          // For now we simulate specific username update if enabled in Clerk settings.
+          user.update({ username: editUsername })
+            .then(() => alert("Profile updated!"))
+            .catch(e => alert("Update failed: " + e.errors[0]?.message));
       }
   };
 
   const handleDownloadReport = async () => {
     if (!exportRef.current) return;
     
-    // Make the export element visible briefly for capture (it's off-screen but needs display:block)
     exportRef.current.style.display = "block";
     
     try {
         const canvas = await html2canvas(exportRef.current, {
-            backgroundColor: '#050000', // Match app background
-            scale: 3, // High resolution for sharing
+            backgroundColor: '#050000',
+            scale: 3,
             useCORS: true, 
             logging: false,
-            width: 600, // Fixed width for consistent output
+            width: 600,
             windowWidth: 600,
-            onclone: (clonedDoc) => {
+            onclone: (clonedDoc: Document) => {
                 const el = clonedDoc.getElementById('export-content');
                 if (el) el.style.display = 'block';
             }
@@ -234,9 +235,8 @@ const App: React.FC = () => {
         link.click();
     } catch (err) {
         console.error("Download failed", err);
-        alert("Failed to generate report image. Please take a screenshot manually.");
+        alert("Failed to generate report image.");
     } finally {
-        // Hide it again
         exportRef.current.style.display = "none";
     }
   };
@@ -252,7 +252,6 @@ const App: React.FC = () => {
       </div>
 
       <GlassCard className="w-full relative overflow-hidden border-blood-500/30">
-        {/* Glow effect behind card title */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1 bg-blood-500 shadow-[0_0_20px_#ff0033]"></div>
         
         <div className="flex items-center justify-center gap-2 mb-6">
@@ -353,9 +352,8 @@ const App: React.FC = () => {
             id="export-content"
             ref={exportRef} 
             className="fixed left-[-9999px] top-0 w-[600px] bg-[#050000] p-10 text-center font-body"
-            style={{ display: 'none' }} // Controlled by download function
+            style={{ display: 'none' }} 
         >
-             {/* Background Decoration for Image */}
              <div className="absolute inset-0 z-0">
                 <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-blood-600/20 rounded-full blur-[80px]"></div>
                 <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-blood-900/20 rounded-full blur-[80px]"></div>
@@ -372,7 +370,6 @@ const App: React.FC = () => {
 
                  <div className="mb-6">
                     <p className="text-gray-400 text-sm uppercase tracking-wider mb-2">Toxicity Level</p>
-                    {/* Aligned Bar and Text */}
                     <div className="flex items-center justify-center gap-4 px-8">
                          <div className="flex-1 h-4 bg-gray-900 rounded-full overflow-hidden border border-white/10">
                             <div 
@@ -380,10 +377,9 @@ const App: React.FC = () => {
                                 style={{ width: `${result.toxicityScore}%` }}
                             ></div>
                          </div>
-                         {/* Tambahkan 'leading-none' dan '-mt-2' */}
                          <span 
                              className={`font-display text-3xl w-[80px] text-right leading-none ${toxicityColorClass}`}
-                             style={{ transform: 'translateY(-13px)' }} // <-- Mainkan angka ini (-4px, -5px, -6px, dst) sampai lurus
+                             style={{ transform: 'translateY(-13px)' }}
                          >
                              {result.toxicityScore}%
                          </span>
@@ -411,8 +407,7 @@ const App: React.FC = () => {
   const renderResultFree = () => {
     if (!result) return null;
     
-    // Determine button state based on user status
-    const isPremium = user?.isPremium;
+    const isPremium = user?.publicMetadata?.isPremium === true;
     const buttonText = isPremium ? "DEEP ANALYSIS" : "UNLOCK THE TRUTH ($2.99)";
     const ButtonIcon = isPremium ? Search : Lock;
 
@@ -422,7 +417,6 @@ const App: React.FC = () => {
     return (
       <div className="flex flex-col items-center gap-6 py-4 animate-in slide-in-from-bottom-10 duration-500">
         
-        {/* Render the hidden export template */}
         {renderExportTemplate()}
 
         <GlassCard className="w-full text-center border-blood-500/50 shadow-[0_0_30px_rgba(255,0,50,0.15)]">
@@ -473,13 +467,21 @@ const App: React.FC = () => {
              <Button variant="secondary" className="py-3 text-sm" onClick={handleDownloadReport}>
                 <Download className="w-4 h-4" /> Download Report
              </Button>
+             
+             {/* RESET BUTTON FIXED: CLEARS CHAT HISTORY NOW */}
              <Button variant="outline" onClick={() => { 
-                 // Bersihkan State
+                 // Reset UI View
                  setView(AppView.HOME); 
+                 // Reset Inputs
                  setAuditData({ ...auditData, chatHistory: '', screenshot: undefined }); 
                  setFileName(null); 
                  setResult(null); 
-                 // Bersihkan Storage
+                 
+                 // PENTING: Hapus Memori Chatbot
+                 setChatHistory([]);
+                 setIsChatting(false);
+
+                 // Hapus Cache Storage
                  localStorage.removeItem('audit_result');
                  localStorage.removeItem('audit_input');
              }} className="...">
@@ -495,15 +497,14 @@ const App: React.FC = () => {
   const renderAuth = () => (
     <div className="flex flex-col items-center justify-center min-h-[85vh] gap-6 animate-in fade-in duration-500">
        <div className="text-center space-y-2 mb-4">
-        <Title className="text-5xl">THE LOVE<br />AUDITOR</Title>
+        <Title>THE LOVE<br />AUDITOR</Title>
         <Subtitle>Love is blind. AI isn't.</Subtitle>
       </div>
 
       <GlassCard className="w-full max-w-md p-0 overflow-hidden flex justify-center min-h-[400px]">
-         {/* Komponen Resmi Clerk yang sudah di-styling Gelap */}
          <SignIn 
             routing="virtual"
-            redirectUrl="/" // Balik ke Home setelah login
+            redirectUrl="/"
             appearance={{
                 elements: {
                     rootBox: "w-full",
@@ -524,16 +525,13 @@ const App: React.FC = () => {
   );
 
   // 5. PROFILE VIEW
-  // 5. PROFILE VIEW (FIXED)
   const renderProfile = () => {
-    // Pastikan user ada
     if (!isSignedIn || !user) return null;
 
     return (
         <div className="flex flex-col items-center justify-center min-h-[85vh] gap-6 animate-in fade-in duration-500">
              
             <GlassCard className="w-full space-y-6 relative">
-                 {/* Back Button */}
                  <button 
                     onClick={() => setView(AppView.HOME)} 
                     className="absolute top-6 left-6 p-2 bg-white/5 rounded-full hover:bg-white/10 text-gray-300 hover:text-white transition-all z-10"
@@ -547,7 +545,6 @@ const App: React.FC = () => {
                     <Subtitle>Manage your tragic love life settings</Subtitle>
                 </div>
 
-                {/* Header Section with Avatar */}
                 <div className="flex items-center gap-4 border-b border-white/10 pb-6">
                     <div className="w-16 h-16 rounded-full border-2 border-white/20 overflow-hidden">
                         <img src={user.imageUrl} alt="Profile" className="w-full h-full object-cover" />
@@ -567,9 +564,8 @@ const App: React.FC = () => {
                             </span>
                         )}
                     </div>
-                </div> {/* <--- INI DIA! Penutup DIV ini yang tadi hilang */}
+                </div>
 
-                {/* Settings Form */}
                 <div className="space-y-4">
                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                         <Settings className="w-4 h-4" /> Account Settings
@@ -590,7 +586,6 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Membership Action */}
                 {!isPremiumUser && (
                     <div className="bg-gradient-to-r from-blood-900/40 to-black p-4 rounded-xl border border-blood-500/30 flex items-center justify-between">
                         <div>
@@ -616,10 +611,6 @@ const App: React.FC = () => {
 
   // 6. PREMIUM DASHBOARD
   const renderPremium = () => {
-    // If no result is present but user is premium (navigated from somewhere else), show placeholder or redirect
-    // For this demo, let's assume they might want to see previous audits or start new.
-    // If result is null, we can render a "Dashboard Home" or just redirect to Start Audit.
-    // To keep it simple, if no result, we'll show a "No active audit" state or redirect home.
     if (!result) {
          return (
              <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
@@ -629,7 +620,6 @@ const App: React.FC = () => {
          )
     }
     
-    // Fill in missing mock data if specific fields aren't there (since we shared the type)
     const detailed = result.detailedAnalysis || "Analysis pending...";
     const flags = result.redFlagsList || ["Red Flag 1", "Red Flag 2", "Red Flag 3"];
     const advice = result.advice || "Run away.";
@@ -641,7 +631,6 @@ const App: React.FC = () => {
                 <span className="bg-blood-600 text-white text-xs px-2 py-1 rounded font-bold uppercase">Paid</span>
             </div>
 
-            {/* Section 1: The Red Flags Revealed */}
             <GlassCard className="border-blood-500/40">
                 <h3 className="font-display text-xl mb-4 flex items-center gap-2 text-white">
                     <AlertTriangle className="text-blood-500" />
@@ -657,7 +646,6 @@ const App: React.FC = () => {
                 </ul>
             </GlassCard>
 
-            {/* Section 2: Deep Analysis */}
             <GlassCard>
                 <h3 className="font-display text-xl mb-4 text-white">DEEP ANALYSIS</h3>
                 <div className="text-gray-300 text-sm leading-relaxed space-y-4">
@@ -665,14 +653,12 @@ const App: React.FC = () => {
                 </div>
             </GlassCard>
 
-            {/* Section 3: Action Plan */}
             <GlassCard className="bg-gradient-to-br from-white/5 to-blood-900/20">
                 <h3 className="font-display text-xl mb-2 text-white">REQUIRED ACTION</h3>
                 <p className="text-lg font-bold text-blood-500 uppercase tracking-wide mb-2">{result.verdict === "BORING AS HELL" ? "UPGRADE YOUR GAME" : "INITIATE BREAKUP PROTOCOL"}</p>
                 <p className="text-sm text-gray-300">{advice}</p>
             </GlassCard>
 
-             {/* Section 4: Chatbot */}
              <GlassCard className="flex flex-col gap-2">
                  <div className="flex items-center gap-2 mb-2">
                      <MessageSquare className="w-5 h-5 text-blood-500" />
@@ -707,15 +693,16 @@ const App: React.FC = () => {
              </GlassCard>
 
              <Button variant="outline" onClick={() => { 
-                 // Bersihkan State
+                 // Reset Total
                  setView(AppView.HOME); 
                  setAuditData({ ...auditData, chatHistory: '', screenshot: undefined }); 
                  setFileName(null); 
-                 setResult(null); 
-                 // Bersihkan Storage
+                 setResult(null);
+                 setChatHistory([]); // PENTING
+                 setIsChatting(false); // PENTING
                  localStorage.removeItem('audit_result');
                  localStorage.removeItem('audit_input');
-             }} className="...">
+             }} className="mt-8">
                  START NEW AUDIT
              </Button>
         </div>
@@ -724,10 +711,8 @@ const App: React.FC = () => {
 
   // --- Main Render ---
 
-  // Top Bar (Simple)
   const renderHeader = () => (
     <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex justify-between items-center pointer-events-none">
-        {/* Logo small (only visible if not home) */}
         <div 
             className={`font-display text-white text-xl pointer-events-auto transition-opacity cursor-pointer ${view === AppView.HOME ? 'opacity-0' : 'opacity-100'}`}
             onClick={() => setView(AppView.HOME)}
@@ -735,13 +720,10 @@ const App: React.FC = () => {
             LOVE AUDITOR
         </div>
         
-        {/* Auth Buttons or Profile */}
         <div className="pointer-events-auto">
             {isSignedIn && user ? (
-                <div onClick={() => setView(AppView.PROFILE)} className="...">
-                    {/* Opsional: Bisa pakai UserButton Clerk atau custom avatar anda */}
-                    <img src={user.imageUrl} className="w-6 h-6 rounded-full" />
-                    <span className="text-xs font-bold uppercase">{user.username || user.firstName}</span>
+                <div onClick={() => setView(AppView.PROFILE)} className="cursor-pointer">
+                    <img src={user.imageUrl} className="w-8 h-8 rounded-full border border-white/30 hover:border-blood-500 transition-all" />
                 </div>
             ) : (
                 view !== AppView.AUTH && (
