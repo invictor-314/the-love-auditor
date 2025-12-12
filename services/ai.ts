@@ -130,13 +130,6 @@ export const chatWithAuditor = async (
         
         YOUR MEMORY:
         Keep conversation continuity. Reference previous messages.
-        
-        CRITICAL SAFETY GUIDELINES (TO AVOID FILTER BLOCKING):
-        1. You are roasting the *relationship dynamics* and *bad decisions*, NOT the explicit acts.
-        2. DO NOT use explicit sexual language or descriptions. If the user's chat contains "NSFW" topics, use funny metaphors (e.g., instead of "sleeping together", say "horizontal cardio" or "midnight mistakes").
-        3. Avoid words like "Predator" in a literal sense. Use "Walking Red Flag" instead.
-        4. Keep it savage, but keep it "PG-13" so the content filter doesn't cut you off.
-        5. If the evidence is too dirty, roast their *audacity* to send it, not the content itself.
         `;
 
         // Susun Pesan Awal (System + Evidence)
