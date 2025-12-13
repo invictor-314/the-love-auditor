@@ -29,7 +29,7 @@ import {
 import { useUser, useClerk, SignIn } from "@clerk/clerk-react";
 
 // Link Checkout Lemon Squeezy Anda
-const LEMON_SQUEEZY_CHECKOUT_URL = "https://loveauditor.lemonsqueezy.com/buy/2d693ba6-6fb4-4f60-ac2a-57420e6b6210";
+const LEMON_SQUEEZY_CHECKOUT_URL = "https://loveauditor.lemonsqueezy.com/buy/361f97fd-6473-463c-b889-b001ce6e2e2b";
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.HOME);
