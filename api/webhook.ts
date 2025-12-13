@@ -1,55 +1,51 @@
 import { createClerkClient } from '@clerk/backend';
 import crypto from 'crypto';
+import { buffer } from 'micro'; // Kita pakai ini untuk baca Raw Body
 
-// Helper function untuk memverifikasi tanda tangan Lemon Squeezy
-const verifySignature = (req: any, secret: string) => {
-  const hmac = crypto.createHmac('sha256', secret);
-  // Di Vercel, req.body sudah berupa object JSON. 
-  // Kita ubah balik jadi string untuk verifikasi hash.
-  const digest = Buffer.from(hmac.update(JSON.stringify(req.body)).digest('hex'), 'utf8');
-  const signature = Buffer.from(req.headers['x-signature'] as string || '', 'utf8');
-
-  // Cek apakah panjang buffer sama (untuk mencegah timing attack) dan isinya sama
-  if (digest.length !== signature.length) return false;
-  return crypto.timingSafeEqual(digest, signature);
+// ⚠️ PENTING: Matikan body parser bawaan Vercel
+// Agar kita bisa membaca data mentah untuk verifikasi signature
+export const config = {
+  api: {
+    bodyParser: false,
+  },
 };
 
 export default async function handler(req: any, res: any) {
-  // 1. Hanya terima method POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // 2. AMBIL SECRET KEY DARI VERCEL ENVIRONMENT
-    // Pastikan Anda sudah set variable ini di Dashboard Vercel!
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
-    
+
     if (!secret) {
-      console.error("LEMONSQUEEZY_WEBHOOK_SECRET is missing in Vercel Env!");
-      return res.status(500).json({ error: 'Server misconfiguration' });
+      console.error("❌ LEMONSQUEEZY_WEBHOOK_SECRET is missing!");
+      return res.status(500).json({ error: 'Server config missing' });
     }
 
-    // 3. VERIFIKASI TANDA TANGAN (SECURITY CHECK)
-    // Jika tanda tangan tidak cocok, tolak request ini.
-    if (!verifySignature(req, secret)) {
-      console.error("Invalid signature. Request rejected.");
+    // 1. BACA RAW BODY (BUFFER)
+    const rawBody = await buffer(req);
+    
+    // 2. VERIFIKASI SIGNATURE
+    const hmac = crypto.createHmac('sha256', secret);
+    const digest = Buffer.from(hmac.update(rawBody).digest('hex'), 'utf8');
+    const signature = Buffer.from(req.headers['x-signature'] as string || '', 'utf8');
+
+    if (!crypto.timingSafeEqual(digest, signature)) {
+      console.error("❌ Invalid signature. Webhook rejected.");
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    const event = req.body;
+    // 3. PARSE JSON SETELAH VERIFIKASI SUKSES
+    const event = JSON.parse(rawBody.toString());
 
-    // 4. PROSES DATA JIKA VERIFIKASI LOLOS
+    // 4. PROSES LOGIKA BISNIS
     if (event.meta.event_name === 'order_created') {
-      
       const userEmail = event.data.attributes.user_email;
-      console.log(`✅ Verified Payment received for: ${userEmail}`);
+      console.log(`✅ Valid payment received for: ${userEmail}`);
 
-      // Inisialisasi Clerk
-      // Pastikan CLERK_SECRET_KEY ada di Vercel Env juga
       const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
-      // Cari user di Clerk berdasarkan email pembeli
       const userList = await clerk.users.getUserList({
         emailAddress: [userEmail],
         limit: 1,
@@ -58,7 +54,6 @@ export default async function handler(req: any, res: any) {
       if (userList.data.length > 0) {
         const userId = userList.data[0].id;
 
-        // Update status user jadi Premium
         await clerk.users.updateUserMetadata(userId, {
           publicMetadata: {
             isPremium: true,
@@ -66,19 +61,18 @@ export default async function handler(req: any, res: any) {
           }
         });
 
-        console.log(`User ${userId} upgraded successfully.`);
+        console.log(`🚀 User ${userId} upgraded to Premium!`);
         return res.status(200).json({ message: 'User upgraded' });
       } else {
-        console.warn(`User with email ${userEmail} not found in Clerk.`);
-        // Kita tetap return 200 agar Lemon Squeezy tidak mengirim ulang webhook terus menerus
-        return res.status(200).json({ message: 'User not found, but webhook received' });
+        console.warn(`⚠️ User email ${userEmail} not found in Clerk.`);
+        return res.status(200).json({ message: 'User not found but webhook received' });
       }
     }
 
     return res.status(200).json({ message: 'Event ignored' });
 
   } catch (error) {
-    console.error('Webhook Error:', error);
+    console.error('🔥 Webhook Error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
