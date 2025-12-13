@@ -61,20 +61,6 @@ const App: React.FC = () => {
   const exportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    // 1. Cek apakah ada kode affiliate di URL saat ini
-    const urlParams = new URLSearchParams(window.location.search);
-    const affFromUrl = urlParams.get('aff');
-
-    if (affFromUrl) {
-        // 2. Jika ada, SIMPAN ke penyimpanan browser (awet selamanya sampai dihapus)
-        localStorage.setItem('referral_code', affFromUrl);
-      
-        // (Opsional) Bersihkan URL agar terlihat rapi
-        // window.history.replaceState({}, document.title, "/"); 
-    }
-  }, []); // [] artinya hanya jalan sekali saat web pertama dibuka
-
   // --- EFFECT: Load Data from Storage ---
   useEffect(() => {
     const savedResult = localStorage.getItem('audit_result');
@@ -112,6 +98,20 @@ const App: React.FC = () => {
     }
   }, [chatHistory, view]);
 
+  // --- Tambahkan useEffect ini di bagian atas komponen App ---
+  useEffect(() => {
+    // 1. Cek apakah ada kode affiliate di URL saat ini
+    const urlParams = new URLSearchParams(window.location.search);
+    const affFromUrl = urlParams.get('aff');
+  
+    if (affFromUrl) {
+        // 2. Jika ada, SIMPAN ke penyimpanan browser (awet selamanya sampai dihapus)
+        localStorage.setItem('referral_code', affFromUrl);
+        
+        // (Opsional) Bersihkan URL agar terlihat rapi
+        // window.history.replaceState({}, document.title, "/"); 
+    }
+  }, []); // [] artinya hanya jalan sekali saat web pertama dibuka
 
   // --- Helpers ---
 
