@@ -1,28 +1,55 @@
 import { createClerkClient } from '@clerk/backend';
+import crypto from 'crypto';
 
-// Ini kode backend yang jalan di server Vercel (bukan di browser user)
-export default async function handler(req, res) {
+// Helper function untuk memverifikasi tanda tangan Lemon Squeezy
+const verifySignature = (req: any, secret: string) => {
+  const hmac = crypto.createHmac('sha256', secret);
+  // Di Vercel, req.body sudah berupa object JSON. 
+  // Kita ubah balik jadi string untuk verifikasi hash.
+  const digest = Buffer.from(hmac.update(JSON.stringify(req.body)).digest('hex'), 'utf8');
+  const signature = Buffer.from(req.headers['x-signature'] as string || '', 'utf8');
+
+  // Cek apakah panjang buffer sama (untuk mencegah timing attack) dan isinya sama
+  if (digest.length !== signature.length) return false;
+  return crypto.timingSafeEqual(digest, signature);
+};
+
+export default async function handler(req: any, res: any) {
+  // 1. Hanya terima method POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // 1. Ambil data yang dikirim Lemon Squeezy
-    // Karena Vercel memparsing body otomatis, kita perlu raw body untuk verifikasi signature (opsional tapi disarankan)
-    // Untuk MVP tahap 2 ini, kita percaya dulu data body-nya
+    // 2. AMBIL SECRET KEY DARI VERCEL ENVIRONMENT
+    // Pastikan Anda sudah set variable ini di Dashboard Vercel!
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+    
+    if (!secret) {
+      console.error("LEMONSQUEEZY_WEBHOOK_SECRET is missing in Vercel Env!");
+      return res.status(500).json({ error: 'Server misconfiguration' });
+    }
+
+    // 3. VERIFIKASI TANDA TANGAN (SECURITY CHECK)
+    // Jika tanda tangan tidak cocok, tolak request ini.
+    if (!verifySignature(req, secret)) {
+      console.error("Invalid signature. Request rejected.");
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
     const event = req.body;
 
-    // Cek apakah ini event "order_created" (pembayaran sukses)
+    // 4. PROSES DATA JIKA VERIFIKASI LOLOS
     if (event.meta.event_name === 'order_created') {
       
-      // 2. Ambil email user yang bayar
       const userEmail = event.data.attributes.user_email;
-      console.log(`Payment received for: ${userEmail}`);
+      console.log(`✅ Verified Payment received for: ${userEmail}`);
 
-      // 3. Panggil Clerk (Database User)
+      // Inisialisasi Clerk
+      // Pastikan CLERK_SECRET_KEY ada di Vercel Env juga
       const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
-      // Cari user berdasarkan email
+      // Cari user di Clerk berdasarkan email pembeli
       const userList = await clerk.users.getUserList({
         emailAddress: [userEmail],
         limit: 1,
@@ -31,19 +58,20 @@ export default async function handler(req, res) {
       if (userList.data.length > 0) {
         const userId = userList.data[0].id;
 
-        // 4. UPDATE METADATA USER JADI PREMIUM (PERMANEN)
+        // Update status user jadi Premium
         await clerk.users.updateUserMetadata(userId, {
           publicMetadata: {
             isPremium: true,
-            plan: 'lifetime_299'
+            plan: 'lifetime'
           }
         });
 
-        console.log(`User ${userId} upgraded to Premium.`);
-        return res.status(200).json({ message: 'User upgraded successfully' });
+        console.log(`User ${userId} upgraded successfully.`);
+        return res.status(200).json({ message: 'User upgraded' });
       } else {
-        console.error('User not found in Clerk database');
-        return res.status(404).json({ error: 'User not found' });
+        console.warn(`User with email ${userEmail} not found in Clerk.`);
+        // Kita tetap return 200 agar Lemon Squeezy tidak mengirim ulang webhook terus menerus
+        return res.status(200).json({ message: 'User not found, but webhook received' });
       }
     }
 
